@@ -1,0 +1,19 @@
+# Configuration file for Audio Transcriber
+
+# Directory paths
+input_directory: "input"
+output_directory: "output"
+manual_processing_directory: "manual"
+
+# WhisperX settings
+whisperx:
+  model_size: "base"                          # tiny, base, small, medium, large
+  language: "ru"                              # Language code (ru, en, etc.)
+  temperature: 0.1                            # Temperature for transcription (0.1 for better accuracy)
+  compute_type: "int8"                        # float32, float16, int8 (int8 works well)
+  device: "cpu"                               # cpu, cuda
+  debug: false                                # Enable debug output
+
+# Processing settings
+processing:
+  max_retry_attempts: 3                       # Maximum retry attempts

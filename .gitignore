@@ -1,0 +1,33 @@
+# Virtual environments
+.venv/
+venv/
+env/
+output/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# WhisperX models (large files)
+models/*
+!models/README.txt
+
+# Processing files (temporary and output)
+output/*.txt
+output/*.in_process
+manual/*
+
+# Test and sample files (optional - uncomment if needed)
+# input/sample.*
+# output/sample.*
+cache/
