@@ -22,6 +22,9 @@ Thumbs.db
 models/*
 !models/README.txt
 
+# Input files (temporary and output)
+input/!*.txt
+
 # Processing files (temporary and output)
 output/*.txt
 output/*.in_process
