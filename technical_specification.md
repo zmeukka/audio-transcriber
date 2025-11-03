@@ -3,9 +3,21 @@
 
 ### 1. ОБЩЕЕ ОПИСАНИЕ ПРОЕКТА
 
-**Цель проекта:** Разработать программу для автоматического преобразования аудиофайлов в текст с использованием библиотеки WhisperX.
+**Цель проекта:** Разработать программу для автоматического преобразования аудиофайлов в текст с использованием библиотеки WhisperX, развертываемую в Docker контейнере.
 
-**Назначение:** Программа предназначена для массовой обработки аудиофайлов (например, записей разговоров из Telegram) и получения их текстовых расшифровок с возможностью идентификации говорящих.
+**Назначение:** Программа предназначена для обработки аудиофайлов через API запросы. Аудиофайлы передаются через shared folders между Docker контейнером и хостовой системой.
+
+**Принцип работы:**
+1. Клиент делает запрос к программе с указанием имени аудиофайла
+2. Программа находит файл в shared folder
+3. Обрабатывает файл через WhisperX
+4. Сохраняет результат расшифровки в shared folder
+5. Возвращает ответ о статусе обработки
+
+**Развертывание:** Программа распространяется в виде:
+- Docker образа для контейнеризации
+- Git репозитория с исходным кодом
+- Документации по установке и использованию
 
 ### 2. ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ
 
@@ -13,29 +25,98 @@
 - **Язык программирования:** Python 3.8+
 - **Основная библиотека:** WhisperX
 - **Язык комментариев в коде:** Английский (все комментарии должны быть написаны на английском языке)
-- **Операционная система:** Windows, Linux, macOS
+- **Контейнеризация:** Docker
+- **Операционная система:** Linux (в Docker контейнере)
+- **API Framework:** FastAPI или Flask для обработки HTTP запросов
 
-#### 2.2 Архитектура программы
+#### 2.2 Docker требования
+- **Base image:** python:3.11-slim или ubuntu:22.04
+- **Shared volumes:** для обмена файлами между контейнером и хостом
+- **Порты:** экспозиция порта для API (например, 8000)
+- **Environment variables:** для конфигурации без пересборки образа
+
+#### 2.3 Архитектура программы
 Программа должна состоять из следующих компонентов:
-- Основной исполняемый модуль
-- Модуль конфигурации
-- Модуль обработки аудио (через консольную утилиту WhisperX)
-- Модуль управления файлами
-- Модуль логирования
-- Модуль управления внешними процессами (для запуска WhisperX)
+- **API модуль** - обработка HTTP запросов (FastAPI/Flask)
+- **Основной исполняемый модуль** - координация обработки
+- **Модуль конфигурации** - загрузка настроек
+- **Модуль обработки аудио** - интеграция с WhisperX
+- **Модуль управления файлами** - работа с shared folders
+- **Модуль логирования** - отслеживание процессов
+- **Health check модуль** - проверка состояния сервиса
 
 ### 3. ФУНКЦИОНАЛЬНЫЕ ТРЕБОВАНИЯ
 
-#### 3.1 Файл конфигурации (config.yaml)
+#### 3.1 API Интерфейс
+
+##### 3.1.1 HTTP Endpoints
+**POST /transcribe**
+- **Назначение:** Запрос на транскрипцию аудиофайла
+- **Параметры:** 
+  ```json
+  {
+    "filename": "audio_file.mp3",
+    "language": "ru" (optional),
+    "model_size": "base" (optional)
+  }
+  ```
+- **Ответ:**
+  ```json
+  {
+    "status": "processing|completed|error",
+    "task_id": "unique_task_id",
+    "message": "Processing started",
+    "output_file": "audio_file.txt" (if completed)
+  }
+  ```
+
+**GET /status/{task_id}**
+- **Назначение:** Проверка статуса обработки
+- **Ответ:**
+  ```json
+  {
+    "status": "processing|completed|error",
+    "progress": "50%",
+    "processing_time": "45.3 seconds",
+    "error_message": "Error details" (if error)
+  }
+  ```
+
+**GET /health**
+- **Назначение:** Health check для мониторинга
+- **Ответ:**
+  ```json
+  {
+    "status": "healthy",
+    "whisperx_available": true,
+    "disk_space_mb": 15360
+  }
+  ```
+
+#### 3.2 Shared Folders Configuration
+- **Input folder:** `/app/shared/input` (mapped to host)
+- **Output folder:** `/app/shared/output` (mapped to host)
+- **Temp folder:** `/app/shared/temp` (for processing)
+- **Config folder:** `/app/shared/config` (for external configuration)
+
+#### 3.3 Файл конфигурации (config.yaml)
 Программа должна использовать файл настроек в формате YAML со следующими параметрами:
 
 ```yaml
-# Пути к директориям
-input_directory: "путь/к/входной/папке"        # Папка с аудиофайлами для обработки
-output_directory: "путь/к/выходной/папке"      # Папка для сохранения результатов
-manual_processing_directory: "путь/к/папке/ручной/обработки"  # Папка для проблемных файлов
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  max_concurrent_tasks: 3
 
-# Настройки WhisperX
+# Shared Folders (mounted from host)
+folders:
+  input_directory: "/app/shared/input"
+  output_directory: "/app/shared/output"
+  temp_directory: "/app/shared/temp"
+
+# WhisperX Settings
 whisperx:
   model_size: "base"                            # Размер модели (tiny, base, small, medium, large)
   language: "ru"                               # Язык распознавания (ru, en, de, fr, es, etc.)
@@ -44,61 +125,68 @@ whisperx:
   device: "cpu"                                # Устройство (cpu, cuda)
   debug: false                                 # Отладочный вывод
 
-# Настройки обработки
+# Processing Settings
 processing:
   max_retry_attempts: 3                        # Максимальное количество попыток обработки
+  timeout_seconds: 3600                        # Таймаут обработки одного файла
+  cleanup_temp_files: true                     # Очистка временных файлов
 ```
 
-#### 3.2 Логика работы программы
+#### 3.4 Логика работы программы
 
-##### 3.2.1 Сканирование входной директории
-- Программа сканирует входную папку на наличие аудиофайлов
-- Поддерживаемые форматы: .mp3, .wav, .m4a, .ogg, .flac
-- Имена файлов могут быть любыми, но обычно имеют формат: `telegramID+salt.расширение`
+##### 3.4.1 API Workflow
+1. **Прием запроса:** API получает POST запрос с именем файла
+2. **Валидация:** Проверка существования файла в input shared folder
+3. **Создание задачи:** Генерация уникального task_id
+4. **Асинхронная обработка:** Запуск обработки в фоновом режиме
+5. **Мониторинг:** Отслеживание прогресса через status endpoint
+6. **Результат:** Сохранение в output shared folder
 
-##### 3.2.2 Определение статуса файла
-Для каждого аудиофайла программа проверяет наличие служебных файлов:
-- `filename.in_process` - файл процесса обработки (содержит также информацию об ошибках)
-- `filename.txt` - готовая расшифровка
+##### 3.4.2 Определение статуса файла
+Для каждого аудиофайла программа проверяет:
+- Наличие файла в `/app/shared/input/`
+- Статус обработки в внутренней базе задач
+- Наличие результата в `/app/shared/output/`
 
-**Статусы файлов:**
-- **Не обработан** - отсутствуют все служебные файлы
-- **В процессе** - существует файл `.in_process` без ошибок в секции ERRORS
-- **Ошибка** - существует файл `.in_process` с записями в секции ERRORS
-- **Завершен** - существует файл `.txt` и отсутствует `.in_process`
+**Статусы обработки:**
+- **pending** - задача создана, ожидает обработки
+- **processing** - файл обрабатывается WhisperX
+- **completed** - обработка завершена успешно
+- **error** - произошла ошибка при обработке
+- **timeout** - превышен лимит времени обработки
 
-##### 3.2.3 Алгоритм обработки
+##### 3.4.3 Алгоритм обработки
 
-**Для необработанных файлов:**
-1. Создать файл `filename.in_process`
-2. Записать в него начальную информацию:
+**При получении запроса /transcribe:**
+1. Проверить файл в shared input folder
+2. Создать task с уникальным ID
+3. Добавить задачу в очередь обработки
+4. Вернуть task_id клиенту
+
+**Фоновая обработка:**
+1. Взять задачу из очереди
+2. Создать временную директорию
+3. Запустить WhisperX команду:
+   ```bash
+   whisperx /app/shared/input/[filename] \
+     --model [model_size] \
+     --language [language] \
+     --temperature [temperature] \
+     --compute_type [compute_type] \
+     --device [device] \
+     --output_dir /app/shared/temp/[task_id] \
+     --output_format json
    ```
-   Начало обработки: [дата и время]
-   Файл: [имя файла]
-   Попытка: 1
-   Processing time: 0 seconds
-   ```
-3. Запустить консольную команду WhisperX для транскрипции
+4. Обработать JSON результат
+5. Создать текстовый файл в output folder
+6. Обновить статус задачи
+7. Очистить временные файлы
 
-**Команда WhisperX:**
-```bash
-whisperx [audio_file] --model [model_size] --language [language] --temperature [temperature] --compute_type [compute_type] --device [device] --output_dir [temp_output] --output_format json
-```
-
-**Параметры команды (из config.yaml):**
-- `[audio_file]` - путь к аудиофайлу для обработки
-- `--model [model_size]` - размер модели из конфигурации (рекомендуется: base для качества, tiny для скорости)
-- `--language [language]` - язык из конфигурации (обязательно ru для русского языка)
-- `--temperature [temperature]` - температура для точности (0.1 для лучшего качества)
-- `--compute_type [compute_type]` - тип вычислений (int8 оптимален для CPU)
-- `--device [device]` - устройство обработки (cpu рекомендуется)
-- `--output_dir [temp_output]` - временная папка для результатов
-- `--output_format json` - формат вывода с временными метками
-
-**Для файлов в процессе:**
-1. Прочитать файл `.in_process`
-2. Определить текущее состояние обработки
-3. Продолжить с места остановки или перезапустить WhisperX
+**Обработка ошибок:**
+- Логирование всех ошибок
+- Retry механизм (до 3 попыток)
+- Детальные сообщения об ошибках в API ответах
+- Graceful degradation при проблемах с WhisperX
 4. Увеличить счетчик попыток
 
 **При превышении лимита попыток (3 раза):**
@@ -110,43 +198,109 @@ whisperx [audio_file] --model [model_size] --language [language] --temperature [
 **Выходные файлы WhisperX:**
 - WhisperX создает файлы в указанной временной папке
 - Основные форматы: `.txt`, `.srt`, `.vtt`, `.json`
-- Используется `.json` формат с временными метками
+### 4. DOCKER РАЗВЕРТЫВАНИЕ
 
-**Алгоритм обработки результатов:**
-1. Программа ожидает завершения процесса WhisperX
-2. Проверяет код возврата процесса (0 = успех)
-3. Парсит выходные файлы WhisperX (.json)
-4. Извлекает текст и временные метки из результатов
-5. Формирует финальный `.txt` файл по заданному формату
-6. Удаляет временные файлы WhisperX и файлы со звуком если финальный txt файл существует
+#### 4.1 Dockerfile
+```dockerfile
+FROM python:3.11-slim
 
-**Обработка транскрипции:**
-- Извлечение текста из JSON результатов WhisperX
-- Форматирование с временными метками
-- Сохранение в итоговый .txt файл без разделения на говорящих
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-**Отслеживание времени обработки:**
-- В начале обработки записывается `Processing time: 0 seconds`
-- Время обновляется по завершении обработки (успешной или с ошибкой)
-- Формат времени: `45.3 seconds`, `1m 30.5s`, `1h 15m 30.5s`
-- Время записывается в лог как для успешных, так и для неудачных обработок
+# Set working directory
+WORKDIR /app
 
-**Результаты экспериментов по оптимизации:**
-На основе проведенных экспериментов установлены оптимальные параметры:
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-| Модель | Язык | Compute Type | Temperature | Результат для "Ты сакс" |
-|--------|------|-------------|-------------|-------------------------|
-| tiny   | ru   | float32     | 0.98        | "Писокс" ❌            |
-| base   | ru   | int8        | 0.1         | "Ты сакс" ✅           |
-| small  | ru   | int8        | 0.1         | "Ты, Сакс" ✅         |
-| medium | ru   | int8        | 0.1         | "This sucks" ❌        |
+# Copy application code
+COPY . .
 
-**Рекомендации:**
-- Модель `base` обеспечивает оптимальное соотношение качества и скорости
-- Принудительное указание `language: "ru"` критично для русской речи
-- `compute_type: "int8"` обеспечивает высокую производительность без потери качества
-- `temperature: 0.1` повышает точность распознавания коротких фраз
-- Модель `medium` склонна переключаться на английский язык, не рекомендуется
+# Create shared directories
+RUN mkdir -p /app/shared/input /app/shared/output /app/shared/temp /app/shared/config
+
+# Expose API port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["python", "app.py"]
+```
+
+#### 4.2 Docker Compose
+```yaml
+version: '3.8'
+
+services:
+  audio-transcriber:
+    build: .
+    container_name: audio_transcriber
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./shared/input:/app/shared/input
+      - ./shared/output:/app/shared/output
+      - ./shared/temp:/app/shared/temp
+      - ./config:/app/shared/config
+    environment:
+      - PYTHONPATH=/app
+      - CONFIG_PATH=/app/shared/config/config.yaml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+```
+
+#### 4.3 Environment Variables
+- `CONFIG_PATH` - путь к файлу конфигурации
+- `LOG_LEVEL` - уровень логирования (DEBUG, INFO, WARNING, ERROR)
+- `MAX_WORKERS` - максимальное количество рабочих процессов
+- `WHISPERX_MODEL_CACHE` - директория для кэша моделей
+
+### 5. ИНТЕРФЕЙС ПОЛЬЗОВАТЕЛЯ
+
+#### 5.1 API Интерфейс
+Программа предоставляет REST API для взаимодействия:
+
+**Базовый URL:** `http://localhost:8000`
+
+**Аутентификация:** Basic Auth или API Key (опционально)
+
+**Content-Type:** `application/json`
+
+#### 5.2 Примеры использования
+
+**Запрос транскрипции:**
+```bash
+curl -X POST http://localhost:8000/transcribe \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "recording.mp3",
+    "language": "ru",
+    "model_size": "base"
+  }'
+```
+
+**Проверка статуса:**
+```bash
+curl http://localhost:8000/status/task_12345
+```
+
+**Health check:**
+```bash
+curl http://localhost:8000/health
+```
 
 #### 3.4 Структура файла .in_process
 ```
@@ -206,45 +360,83 @@ Details: WhisperX process failed
 - **Критерии перемещения в папку ручной обработки:** Три неудачные попытки запуска консольной утилиты WhisperX с ошибками
 
 
-### 5. ТРЕБОВАНИЯ К ИНТЕРФЕЙСУ
+### 6. СТРУКТУРА ПРОЕКТА
 
-#### 5.1 Консольный интерфейс
-- Запуск: `python transcriber.py`
-- Параметры командной строки:
-  - `--file *имя файла*` - Обработка определенного файла
-  - `--test` - Тестовый режим (обработка sample.oga)
-  - `--fast` - Быстрый режим с pre-warmed моделями
-  - `--config *путь*` - Путь к файлу конфигурации
-  - `--verbose` - Подробный вывод
-  
-Без параметров - обработка всех файлов в папке.
-
-#### 5.1.1 Быстрый режим (Fast Mode)
-**Назначение:** Ускорение повторных запусков за счет предварительной загрузки моделей в память.
-
-**Использование:**
-```bash
-# 1. Первоначальный pre-warming (один раз)
-python prewarmer.py                    # ~20-30 секунд
-
-# 2. Быстрая обработка (повторные запуски)
-python transcriber.py --fast --test    # ~2-5 секунд
-python transcriber.py --fast --file input/audio.oga  # ~2-10 секунд
+#### 6.1 Файловая структура
+```
+audio-transcriber/
+├── Dockerfile                    # Docker образ
+├── docker-compose.yml           # Docker Compose конфигурация
+├── requirements.txt              # Python зависимости
+├── app.py                       # Главный API сервер
+├── config.yaml                  # Конфигурация по умолчанию
+├── api/
+│   ├── __init__.py
+│   ├── routes.py                # API endpoints
+│   ├── models.py                # Pydantic модели
+│   └── middleware.py            # API middleware
+├── core/
+│   ├── __init__.py
+│   ├── transcriber.py           # Core transcription logic
+│   ├── task_manager.py          # Task queue management
+│   ├── config_loader.py         # Configuration loader
+│   └── logger.py                # Logging setup
+├── shared/                      # Shared folders (mounted)
+│   ├── input/                   # Input audio files
+│   ├── output/                  # Output transcriptions
+│   ├── temp/                    # Temporary processing
+│   └── config/                  # External configuration
+├── tests/
+│   ├── test_api.py             # API tests
+│   ├── test_transcriber.py     # Core logic tests
+│   └── test_integration.py     # Integration tests
+└── docs/
+    ├── API.md                   # API documentation
+    ├── DEPLOYMENT.md            # Deployment guide
+    └── CONFIGURATION.md         # Configuration guide
 ```
 
-**Ограничения быстрого режима:**
-- Поддерживает только обработку одного файла (`--file` или `--test`)
-- Не поддерживает пакетную обработку всех файлов
-- Требует предварительного pre-warming
-- Высокое потребление памяти (~2-3GB)
+#### 6.2 Зависимости проекта
+```
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+whisperx>=3.7.0
+torch==2.8.0
+torchaudio==2.8.0
+pyyaml>=6.0
+psutil>=5.9.0
+pydantic>=2.0.0
+python-multipart
+aiofiles
+python-jose[cryptography]  # for JWT (optional)
+```
 
-**Преимущества:**
-- Ускорение в 10-20 раз для повторных запусков
-- Модели остаются загруженными в памяти
-- Минимальные накладные расходы на инициализацию
+**Примечание:** Версии torch и torchaudio зафиксированы для обеспечения совместимости с WhisperX.
 
+#### 6.3 Требования к комментариям
+**Все комментарии в коде должны быть на английском языке:**
 
-#### 5.2 Вывод информации
+```python
+# Good example - English comments
+class TranscriptionTask:
+    """Represents a transcription task with status tracking."""
+    
+    def __init__(self, filename: str):
+        # Initialize task with unique ID
+        self.task_id = self._generate_task_id()
+        self.filename = filename
+        # Set initial status to pending
+        self.status = "pending"
+    
+    def process(self):
+        """Process the audio file using WhisperX."""
+        # Start transcription process
+        # ... implementation
+        pass
+
+# Bad example - Russian comments
+# Класс для обработки транскрипции - НЕ ДОПУСКАЕТСЯ
+```
 - Простые текстовые сообщения о текущем статусе
 - Информация об обработанных файлах
 - Сообщения об ошибках
@@ -252,60 +444,73 @@ python transcriber.py --fast --file input/audio.oga  # ~2-10 секунд
 
 ### 6. ТРЕБОВАНИЯ К УСТАНОВКЕ И РАЗВЕРТЫВАНИЮ
 
-#### 6.1 Установка WhisperX
-**Важно:** Программа должна использовать консольную утилиту WhisperX, а не библиотеку напрямую.
+### 7. РАЗВЕРТЫВАНИЕ
 
+#### 7.1 Docker развертывание
 **Предварительные требования:**
-1. Python 3.8+ (рекомендуется Python 3.12)
-2. Git
-3. FFmpeg (для обработки аудиофайлов)
+- Docker Engine 20.0+
+- Docker Compose 2.0+
 
-**Пошаговая установка:**
-
-**Шаг 1: Установка FFmpeg**
-- **Windows:** Скачать с https://ffmpeg.org/download.html и добавить в PATH
-- **Linux:** `sudo apt update && sudo apt install ffmpeg`
-- **macOS:** `brew install ffmpeg`
-
-**Шаг 2: Создание виртуального окружения**
+**Быстрое развертывание:**
 ```bash
-python -m venv .venv
-# Windows:
-.venv\Scripts\Activate.ps1
-# Linux/macOS:
-source .venv/bin/activate
+# Clone repository
+git clone https://github.com/username/audio-transcriber.git
+cd audio-transcriber
+
+# Create shared directories
+mkdir -p shared/{input,output,temp} config
+
+# Copy default configuration
+cp config.yaml config/config.yaml
+
+# Build and start
+docker-compose up -d
+
+# Check status
+docker-compose ps
+curl http://localhost:8000/health
 ```
 
-**Шаг 3: Установка PyTorch (совместимые версии)**
+#### 7.2 Production развертывание
 ```bash
-pip install torch==2.8.0 torchaudio==2.8.0
+# Build production image
+docker build -t audio-transcriber:latest .
+
+# Run with custom configuration
+docker run -d \
+  --name audio_transcriber \
+  -p 8000:8000 \
+  -v $(pwd)/shared/input:/app/shared/input \
+  -v $(pwd)/shared/output:/app/shared/output \
+  -v $(pwd)/config:/app/shared/config \
+  -e CONFIG_PATH=/app/shared/config/config.yaml \
+  audio-transcriber:latest
 ```
 
-**Шаг 4: Установка WhisperX**
-```bash
-pip install whisperx
-```
+### 8. КРИТЕРИИ ПРИЕМКИ
 
-**Шаг 5: Проверка установки**
-```bash
-whisperx --help
-```
+#### 8.1 Функциональность
+- ✅ API успешно принимает запросы на транскрипцию
+- ✅ Корректно обрабатывает аудиофайлы через shared folders
+- ✅ Возвращает статус обработки через API endpoints
+- ✅ Создает корректные текстовые файлы с транскрипцией
+- ✅ Обрабатывает ошибки и retry логику
+- ✅ Health check endpoint работает корректно
+- ✅ Все комментарии в коде на английском языке
 
-**Решение проблем с кодировкой (Windows):**
-Для корректной работы с русским текстом в Windows PowerShell:
-```powershell
-$env:PYTHONIOENCODING="utf-8"
-$env:PYTHONUTF8="1"
-```
+#### 8.2 Docker интеграция
+- ✅ Docker образ собирается без ошибок
+- ✅ Контейнер запускается и экспонирует порт 8000
+- ✅ Shared volumes корректно монтируются
+- ✅ Health check проходит успешно
+- ✅ Логирование работает внутри контейнера
 
-Или добавить в начало Python скрипта:
-```python
-import sys
-if sys.platform == "win32":
-    import codecs
-    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
-    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
-```
+#### 8.3 API тестирование
+- ✅ POST /transcribe принимает корректные запросы
+- ✅ GET /status/{task_id} возвращает актуальный статус
+- ✅ GET /health возвращает состояние сервиса
+- ✅ API возвращает корректные HTTP коды ошибок
+- ✅ JSON responses соответствуют схеме
 
 #### 6.2 Зависимости проекта
 ```
@@ -367,12 +572,79 @@ audio_transcriber/
 - ✅ Логирование работает правильно
 - ✅ Программа стабильно работает с большими объемами данных
 
-### 8. ДОПОЛНИТЕЛЬНЫЕ ЗАМЕЧАНИЯ
+### 9. ROADMAP РАЗРАБОТКИ (DOCKER VERSION)
 
-- Программа должна быть понятна пользователю без технического образования
-- Все сообщения об ошибках должны быть написаны простым языком
-- Необходимо предусмотреть подробную документацию по установке и использованию
-- Рекомендуется создать примеры файлов конфигурации
+#### 9.1 Этап 1: Базовая API архитектура
+- [ ] **1.1** Создание FastAPI приложения с базовыми endpoints
+- [ ] **1.2** Настройка структуры проекта для Docker
+- [ ] **1.3** Создание Pydantic моделей для API
+- [ ] **1.4** Базовое логирование на английском языке
+- [ ] **1.5** Health check endpoint
+
+#### 9.2 Этап 2: Core функциональность
+- [ ] **2.1** Модуль управления задачами (task manager)
+- [ ] **2.2** Интеграция с WhisperX через subprocess
+- [ ] **2.3** Система статусов задач (pending/processing/completed/error)
+- [ ] **2.4** Работа с shared folders
+- [ ] **2.5** Async/await обработка для API
+
+#### 9.3 Этап 3: Docker интеграция
+- [ ] **3.1** Создание Dockerfile с Python 3.11
+- [ ] **3.2** Установка системных зависимостей (ffmpeg, etc.)
+- [ ] **3.3** Настройка shared volumes
+- [ ] **3.4** Docker Compose конфигурация
+- [ ] **3.5** Health checks в Docker
+
+#### 9.4 Этап 4: API endpoints
+- [ ] **4.1** POST /transcribe - прием заданий
+- [ ] **4.2** GET /status/{task_id} - отслеживание статуса
+- [ ] **4.3** GET /health - проверка состояния
+- [ ] **4.4** Error handling и HTTP status codes
+- [ ] **4.5** API validation и security
+
+#### 9.5 Этап 5: Обработка файлов
+- [ ] **5.1** Мониторинг shared input folder
+- [ ] **5.2** Создание уникальных task ID
+- [ ] **5.3** Temporary file management
+- [ ] **5.4** Result formatting и output
+- [ ] **5.5** Cleanup временных файлов
+
+#### 9.6 Этап 6: Error handling
+- [ ] **6.1** Retry логика для WhisperX
+- [ ] **6.2** Timeout handling
+- [ ] **6.3** Graceful shutdown
+- [ ] **6.4** Resource monitoring
+- [ ] **6.5** Detailed error responses
+
+#### 9.7 Этап 7: Тестирование
+- [ ] **7.1** Unit тесты для API endpoints
+- [ ] **7.2** Integration тесты с WhisperX
+- [ ] **7.3** Docker тестирование
+- [ ] **7.4** Load testing
+- [ ] **7.5** Error scenario testing
+
+#### 9.8 Этап 8: Документация
+- [ ] **8.1** API документация (OpenAPI/Swagger)
+- [ ] **8.2** Docker deployment guide
+- [ ] **8.3** Configuration examples
+- [ ] **8.4** Troubleshooting guide
+- [ ] **8.5** Production deployment best practices
+
+#### 9.9 Этап 9: Production готовность
+- [ ] **9.1** Environment variables configuration
+- [ ] **9.2** Security headers и middleware
+- [ ] **9.3** Rate limiting (опционально)
+- [ ] **9.4** Monitoring и metrics
+- [ ] **9.5** CI/CD pipeline для Docker
+
+**Примечание:** Все комментарии в коде должны быть написаны на английском языке в соответствии с требованиями задания.
+
+---
+
+**Версия документа:** 3.0 (Docker API Version)  
+**Дата создания:** 29 октября 2025  
+**Дата обновления:** 3 ноября 2025  
+**Статус:** Обновлено для Docker API развертывания
 
 ### 9. ТЕХНИЧЕСКИЕ РЕШЕНИЯ
 
