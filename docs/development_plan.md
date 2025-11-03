@@ -83,7 +83,7 @@
 ### 📡 Этап 4: API endpoints
 - [ ] **4.1** POST /transcribe - прием заданий
   - [ ] `api/routes.py` - основные endpoints
-  - [ ] Проверка файла с 5 попытками (1 сек интервал)
+  - [ ] Проверка файла с 3 попытками (1 сек интервал)
   - [ ] Логика по статусам файлов (матрица из спецификации)
   - [ ] Создание задач с приоритетами
   - [ ] Debug режим через параметр запроса
@@ -133,7 +133,7 @@
   - [ ] Обновление `.in_progress` с ошибками
   - [ ] Различные типы ошибок (CUDA, файл, процесс)
 - [ ] **6.2** Timeout handling
-  - [ ] Таймауты для WhisperX процессов (30 минут)
+  - [ ] Таймауты для WhisperX процессов (10 минут)
   - [ ] Таймауты для клиентских соединений
   - [ ] Прерывание зависших процессов
 - [ ] **6.3** Graceful shutdown
@@ -193,130 +193,19 @@
   - [ ] Monitoring и metrics
   - [ ] Backup и recovery процедуры
 
-## 📋 Детальные требования для программиста
+## 📋 Технические требования
 
-### 🔧 Упрощенная конфигурация (config.yaml)
-```yaml
-# Directory paths
-shared_directory: "shared"
+### 🔧 Конфигурация
+Используется упрощенная конфигурация в `config.yaml` с основными параметрами (см. [Структуры данных](./data_structures.md)).
 
-# WhisperX default settings
-whisperx:
-  model_size: "base"
-  language: "ru"
-  temperature: 0.1
-  compute_type: "int8"
-  device: "cpu"
-  debug: false
-
-# Processing settings
-processing:
-  max_retry_attempts: 3
-  timeout_minutes: 10
-  file_check_attempts: 3
-  polling_interval_seconds: 10
-
-# Queue settings
-queue:
-  immediate_operations: ["DELETE"]
-```
-
-### 📊 Структуры данных
-
-#### ProcessingTask (упрощенная версия)
-```python
-@dataclass
-class ProcessingTask:
-    filename: str
-    priority: str  # "api" or "auto"
-    settings: dict  # Includes debug parameter from request
-    created_at: datetime
-    attempt: int = 1
-```
-
-#### .in_progress файл (упрощенная версия)
-```json
-{
-  "filename": "audio.mp3",
-  "status": "processing",
-  "start_time": "2024-01-01T10:00:00Z",
-  "attempt": 1,
-  "settings": {
-    "model_size": "base",
-    "language": "ru",
-    "debug": false
-  },
-  "error": null
-}
-```
-
-#### .result файл (упрощенная версия)
-```json
-{
-  "filename": "audio.mp3",
-  "processing_time_seconds": 27.1,
-  "transcription": {
-    "text": "Full transcription text...",
-    "segments": [{
-      "start": 0.0,
-      "end": 5.2, 
-      "text": "Segment text"
-    }]
-  },
-  "metadata": {
-    "duration_seconds": 135.5,
-    "confidence": 0.89,
-    "word_count": 156
-  }
-}
-```
-
-### 🚀 Ключевые алгоритмы
-
-#### Проверка файла (5 попыток)
-```python
-def check_file_exists(filename: str) -> bool:
-    for attempt in range(5):
-        if os.path.exists(f"shared/{filename}"):
-            return True
-        time.sleep(1)
-    return False
-```
-
-#### Определение статуса файла
-```python
-def check_file_status(filename: str) -> str:
-    file_exists = os.path.exists(f"shared/{filename}")
-    in_progress_exists = os.path.exists(f"shared/{filename}.in_progress")
-    result_exists = os.path.exists(f"shared/{filename}.result")
-    
-    if not file_exists:
-        return "file_not_found"
-    elif result_exists and not in_progress_exists:
-        return "completed"
-    elif in_progress_exists:
-        return "processing"
-    else:
-        return "pending"
-```
-
-#### Debug режим
-```python
-def handle_processing_error(task: ProcessingTask, exception: Exception):
-    # Determine debug mode: request parameter takes priority
-    debug_enabled = task.settings.get('debug', config.whisperx.debug)
-    
-    if debug_enabled:
-        debug_response = create_debug_response(task.filename, error_info)
-        notify_clients_with_debug(task.filename, debug_response)
-    else:
-        notify_clients_with_error(task.filename, error_info)
-```
+### 📊 Структуры данных и алгоритмы
+Все структуры данных, ключевые алгоритмы и примеры кода вынесены в отдельный файл: **[Структуры данных и алгоритмы](./data_structures.md)**
 
 ## 📞 Связанные файлы спецификации
 
 - **[Техническое задание](../specs/technical_specification.md)** - полная спецификация
 - **[API документация](./api.md)** - детальные примеры API
+- **[Структуры данных и алгоритмы](./data_structures.md)** - код структур и ключевые алгоритмы
 - **[Конфигурация](./configuration.md)** - настройки системы  
 - **[Статусные файлы](./status_files.md)** - форматы .in_progress/.result
 
@@ -326,9 +215,9 @@ def handle_processing_error(task: ProcessingTask, exception: Exception):
 2. **DELETE запросы выполняются немедленно, минуя очередь**
 3. **Debug параметр из запроса переопределяет настройку config.yaml**
 4. **Система приоритетов: DELETE(0) > API(1) > AUTO-SCAN(2)**
-5. **Максимум 5 попыток поиска файла с интервалом 1 секунда**
-6. **Timeout обработки: 30 минут (1800 секунд)**
-7. **Retry до 3 попыток с экспоненциальной задержкой**
+5. **Максимум 3 попытки поиска файла с интервалом 1 секунда**
+6. **Timeout обработки: 10 минут (600 секунд)**
+7. **Retry до 3 попыток с простой задержкой**
 8. **Единая shared директория для всех файлов**
 
 ---
