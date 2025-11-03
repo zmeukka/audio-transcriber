@@ -20,7 +20,7 @@ Thumbs.db
 
 # WhisperX models (large files)
 models/*
-!models/README.txt
+!models/README.*
 
 # Input files (temporary and output)
 input/!*.txt
