@@ -1,443 +1,466 @@
-# 📊 Статусные файлы
+# 📋 Статусные файлы Audio Transcriber
 
-## 🔄 Файл состояния обработки (.in_progress)
+## 📁 Обзор системы статусных файлов
 
-### 📁 Назначение
-Файл `filename.in_progress` создается при начале обработки аудиофайла и содержит информацию о текущем состоянии, попытках обработки и настройках.
+Система использует файлы в shared директории для отслеживания состояния обработки аудиофайлов:
 
-### 📝 Структура JSON
+- **`.in_progress`** - файлы в процессе обработки
+- **`.result`** - завершенные результаты транскрипции
+- **Исходные аудиофайлы** - входные файлы для обработки
+
+## 🔄 .in_progress файлы
+
+### Назначение
+Создаются при начале обработки аудиофайла и содержат информацию о текущем прогрессе и статусе задачи.
+
+### Формат имени файла
+```
+{audio_filename_without_extension}.in_progress
+```
+
+**Примеры:**
+- `audio.mp3` → `audio.in_progress`
+- `interview.wav` → `interview.in_progress`
+- `podcast_episode_1.flac` → `podcast_episode_1.in_progress`
+
+### Структура JSON
 ```json
 {
   "filename": "audio.mp3",
   "status": "processing",
-  "start_time": "2024-01-01T10:00:00Z",
-  "attempt": 1,
-  "settings": {
-    "model_size": "base",
-    "language": "ru",
-    "temperature": 0.1,
-    "compute_type": "int8",
-    "device": "cpu",
-    "debug": false
-  },
-  "error": null
-}
-```
-
-### 🔧 Поля описания
-
-#### 📋 Основная информация
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `filename` | string | Имя обрабатываемого файла |
-| `creation_time` | ISO8601 | Время создания файла статуса |
-| `current_attempt` | integer | Номер текущей попытки обработки |
-| `should_continue` | boolean | Флаг продолжения обработки |
-| `priority` | string | Приоритет: "api_request" или "auto_scan" |
-
-#### 👥 Клиенты API
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `api_clients` | array | UUID клиентов, ожидающих результат |
-
-#### 🔄 Попытки обработки
-Каждая попытка содержит:
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `attempt_number` | integer | Номер попытки (1, 2, 3...) |
-| `start_time` | ISO8601 | Время начала попытки |
-| `end_time` | ISO8601 | Время окончания (null если в процессе) |
-| `status` | string | "processing", "completed", "failed" |
-| `continue_processing` | boolean | Флаг продолжения этой попытки |
-| `error` | object | Информация об ошибке (если есть) |
-
-#### ⚙️ Настройки обработки
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `model_size` | string | Размер модели: tiny/base/small/medium/large |
-| `language` | string | Код языка: ru/en/es/etc |
-| `temperature` | float | Температура модели (0.0-1.0) |
-| `compute_type` | string | Тип вычислений: float32/float16/int8 |
-| `device` | string | Устройство: cpu/cuda |
-| `debug` | boolean | Debug режим для данного запроса |
-
-#### 📈 Прогресс обработки
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `stage` | string | Этап: "loading_model", "processing_audio", "generating_text" |
-| `percentage` | integer | Процент выполнения (0-100) |
-
-### 🚨 Обработка ошибок
-```json
-{
-  "error": {
-    "code": "whisperx_failed",
-    "message": "WhisperX process exited with code 1",
-    "details": "Audio file format not supported",
-    "timestamp": "2024-01-01T10:05:00Z",
-    "retry_after": 30
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "started_at": "2025-11-03T10:32:00.123456",
+  "priority": "API",
+  "progress": 45.5,
+  "model_used": "small",
+  "language": "en",
+  "estimated_completion": "2025-11-03T10:35:00.000000",
+  "current_stage": "transcription",
+  "retry_count": 0,
+  "client_id": "client-550e8400",
+  "debug_info": {
+    "whisperx_process_id": 12345,
+    "memory_usage_mb": 512.3,
+    "temp_files": ["/tmp/whisperx_temp_abc123"]
   }
 }
 ```
 
-## ✅ Файл результата (.result)
+### Описание полей
 
-### 📁 Назначение
-Файл `filename.result` создается после успешной обработки и содержит результаты транскрипции с метаданными.
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `filename` | string | ✅ | Имя исходного аудиофайла |
+| `status` | string | ✅ | Статус: "processing" или "error" |
+| `task_id` | string | ✅ | Уникальный идентификатор задачи |
+| `started_at` | string | ✅ | ISO 8601 timestamp начала обработки |
+| `priority` | string | ✅ | Приоритет: "DELETE", "API", "AUTO_SCAN" |
+| `progress` | float | ❌ | Прогресс обработки (0.0-100.0) |
+| `model_used` | string | ❌ | Используемая модель Whisper |
+| `language` | string | ❌ | Определенный/заданный язык |
+| `estimated_completion` | string | ❌ | Ожидаемое время завершения |
+| `current_stage` | string | ❌ | Текущий этап обработки |
+| `retry_count` | integer | ❌ | Количество повторных попыток |
+| `client_id` | string | ❌ | Идентификатор клиента |
+| `debug_info` | object | ❌ | Отладочная информация |
 
-### 📝 Структура JSON
+### Возможные значения полей
+
+**status:**
+- `"processing"` - файл обрабатывается
+- `"error"` - произошла ошибка обработки
+
+**priority:**
+- `"DELETE"` - задача удаления (наивысший приоритет)
+- `"API"` - запрос через API
+- `"AUTO_SCAN"` - автоматическое сканирование
+
+**current_stage:**
+- `"initialization"` - инициализация обработки
+- `"audio_loading"` - загрузка аудиофайла
+- `"transcription"` - процесс транскрипции
+- `"post_processing"` - постобработка результата
+- `"saving_result"` - сохранение результата
+
+### Примеры .in_progress файлов
+
+**Успешная обработка в процессе:**
+```json
+{
+  "filename": "interview.mp3",
+  "status": "processing",
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "started_at": "2025-11-03T10:32:00.123456",
+  "priority": "API",
+  "progress": 67.3,
+  "model_used": "small",
+  "language": "en",
+  "estimated_completion": "2025-11-03T10:35:00.000000",
+  "current_stage": "transcription"
+}
+```
+
+**Обработка с ошибкой:**
+```json
+{
+  "filename": "corrupted.wav",
+  "status": "error",
+  "task_id": "660f9511-f3ac-52e5-b827-557766551111",
+  "started_at": "2025-11-03T10:30:00.456789",
+  "priority": "API",
+  "progress": 15.0,
+  "model_used": "base",
+  "current_stage": "audio_loading",
+  "retry_count": 2,
+  "error_message": "Unable to load audio file: format not supported",
+  "debug_info": {
+    "error_code": "AUDIO_LOAD_FAILED",
+    "ffmpeg_output": "Error: Invalid data found when processing input"
+  }
+}
+```
+
+## ✅ .result файлы
+
+### Назначение
+Создаются при успешном завершении транскрипции и содержат полный результат обработки.
+
+### Формат имени файла
+```
+{audio_filename_without_extension}.result
+```
+
+### Структура JSON
 ```json
 {
   "filename": "audio.mp3",
-  "processing_start": "2024-01-01T10:00:00Z",
-  "processing_end": "2024-01-01T10:02:30Z",
-  "duration_seconds": 135.5,
-  "processing_time_seconds": 150.3,
-  "settings": {
-    "model_size": "base",
-    "language": "ru",
-    "temperature": 0.1,
-    "compute_type": "int8",
-    "device": "cpu"
-  },
-  "transcription": {
-    "text": "Полный текст транскрипции аудиозаписи...",
-    "segments": [
-      {
-        "id": 0,
-        "start": 0.0,
-        "end": 5.2,
-        "text": "Привет, как дела?",
-        "confidence": 0.95
-      },
-      {
-        "id": 1,
-        "start": 5.2,
-        "end": 10.1,
-        "text": "Хорошо, спасибо. А у тебя?",
-        "confidence": 0.92
-      }
-    ]
-  },
-  "metadata": {
-    "confidence": 0.89,
-    "language_detected": "ru",
-    "word_count": 156,
-    "segment_count": 45,
-    "whisperx_version": "3.1.1",
-    "model_info": {
-      "name": "faster-whisper-base",
-      "size_mb": 74,
-      "load_time_seconds": 2.3
+  "text": "Complete transcribed text from the audio file...",
+  "status": "completed",
+  "timestamp": "2025-11-03T10:33:18.789012",
+  "model_used": "small",
+  "language": "en",
+  "confidence": 0.923,
+  "duration": 120.5,
+  "file_size": 2048576,
+  "processing_time": 78.4,
+  "word_count": 234,
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 3.5,
+      "text": "This is the first segment",
+      "confidence": 0.95,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.4,
+          "text": "This",
+          "confidence": 0.98
+        },
+        {
+          "start": 0.5,
+          "end": 0.7,
+          "text": "is",
+          "confidence": 0.92
+        }
+      ]
     }
-  },
-  "processing_stats": {
-    "total_attempts": 1,
-    "memory_peak_mb": 512,
-    "cpu_time_seconds": 145.2
+  ],
+  "metadata": {
+    "task_id": "550e8400-e29b-41d4-a716-446655440000",
+    "priority": "API",
+    "client_id": "client-550e8400",
+    "whisperx_version": "3.1.1",
+    "compute_type": "float32",
+    "device": "cpu"
   }
 }
 ```
 
-### 🔧 Поля результата
+### Описание полей
 
-#### 📋 Основная информация
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `filename` | string | Имя обработанного файла |
-| `processing_start` | ISO8601 | Время начала обработки |
-| `processing_end` | ISO8601 | Время завершения обработки |
-| `duration_seconds` | float | Длительность аудио в секундах |
-| `processing_time_seconds` | float | Время обработки в секундах |
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `filename` | string | ✅ | Имя исходного аудиофайла |
+| `text` | string | ✅ | Полный транскрибированный текст |
+| `status` | string | ✅ | Всегда "completed" |
+| `timestamp` | string | ✅ | ISO 8601 timestamp завершения |
+| `model_used` | string | ✅ | Использованная модель Whisper |
+| `language` | string | ✅ | Определенный язык аудио |
+| `confidence` | float | ✅ | Средняя уверенность (0.0-1.0) |
+| `duration` | float | ✅ | Длительность аудио в секундах |
+| `file_size` | integer | ✅ | Размер исходного файла в байтах |
+| `processing_time` | float | ✅ | Время обработки в секундах |
+| `word_count` | integer | ✅ | Количество слов в тексте |
+| `segments` | array | ✅ | Массив сегментов с временными метками |
+| `metadata` | object | ❌ | Дополнительные метаданные |
 
-#### 📝 Результат транскрипции
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `text` | string | Полный текст транскрипции |
-| `segments` | array | Массив сегментов с временными метками |
+### Структура segments
+```json
+{
+  "start": 0.0,              // Время начала в секундах
+  "end": 3.5,                // Время окончания в секундах  
+  "text": "Segment text",     // Текст сегмента
+  "confidence": 0.95,        // Уверенность сегмента
+  "words": [                 // Массив слов (опционально)
+    {
+      "start": 0.0,
+      "end": 0.4,
+      "text": "Word",
+      "confidence": 0.98
+    }
+  ]
+}
+```
 
-#### 🎯 Сегменты транскрипции
-Каждый сегмент содержит:
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `id` | integer | Порядковый номер сегмента |
-| `start` | float | Время начала в секундах |
-| `end` | float | Время окончания в секундах |
-| `text` | string | Текст сегмента |
-| `confidence` | float | Уверенность модели (0.0-1.0) |
+### Примеры .result файлов
 
-#### 📊 Метаданные
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `confidence` | float | Общая уверенность транскрипции |
-| `language_detected` | string | Определенный язык |
-| `word_count` | integer | Количество слов в результате |
-| `segment_count` | integer | Количество сегментов |
+**Короткий аудиофайл:**
+```json
+{
+  "filename": "greeting.wav",
+  "text": "Hello, how are you today?",
+  "status": "completed",
+  "timestamp": "2025-11-03T10:33:18.789012",
+  "model_used": "tiny",
+  "language": "en",
+  "confidence": 0.987,
+  "duration": 2.3,
+  "file_size": 147456,
+  "processing_time": 5.2,
+  "word_count": 6,
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.3,
+      "text": "Hello, how are you today?",
+      "confidence": 0.987,
+      "words": [
+        {"start": 0.0, "end": 0.5, "text": "Hello,", "confidence": 0.99},
+        {"start": 0.6, "end": 0.9, "text": "how", "confidence": 0.98},
+        {"start": 1.0, "end": 1.2, "text": "are", "confidence": 0.99},
+        {"start": 1.3, "end": 1.5, "text": "you", "confidence": 0.98},
+        {"start": 1.6, "end": 2.3, "text": "today?", "confidence": 0.99}
+      ]
+    }
+  ],
+  "metadata": {
+    "task_id": "123e4567-e89b-12d3-a456-426614174000",
+    "priority": "API",
+    "whisperx_version": "3.1.1",
+    "compute_type": "float32",
+    "device": "cpu"
+  }
+}
+```
 
-#### 🤖 Информация о модели
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `name` | string | Название модели |
-| `size_mb` | integer | Размер модели в МБ |
-| `load_time_seconds` | float | Время загрузки модели |
+**Длинный аудиофайл с множественными сегментами:**
+```json
+{
+  "filename": "podcast_episode.mp3",
+  "text": "Welcome to our podcast. Today we're discussing artificial intelligence and its impact on society. Machine learning has revolutionized many industries...",
+  "status": "completed", 
+  "timestamp": "2025-11-03T10:45:22.123456",
+  "model_used": "large",
+  "language": "en",
+  "confidence": 0.912,
+  "duration": 1800.0,
+  "file_size": 25165824,
+  "processing_time": 245.7,
+  "word_count": 2847,
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.2,
+      "text": "Welcome to our podcast.",
+      "confidence": 0.96
+    },
+    {
+      "start": 5.8,
+      "end": 12.1,
+      "text": "Today we're discussing artificial intelligence and its impact on society.",
+      "confidence": 0.94
+    },
+    {
+      "start": 13.0,
+      "end": 18.5,
+      "text": "Machine learning has revolutionized many industries.",
+      "confidence": 0.89
+    }
+  ],
+  "metadata": {
+    "task_id": "789f0123-4567-8901-b234-567890123456",
+    "priority": "AUTO_SCAN",
+    "whisperx_version": "3.1.1",
+    "compute_type": "float16",
+    "device": "cuda"
+  }
+}
+```
 
 ## 🔄 Жизненный цикл файлов
 
-### 1. Создание .in_progress
+### Создание файлов
+1. **Появление аудиофайла** в shared директории
+2. **Создание .in_progress** при начале обработки
+3. **Обновление .in_progress** по мере выполнения
+4. **Создание .result** при успешном завершении
+5. **Удаление .in_progress** после создания .result
+
+### Состояния и переходы
 ```
-Аудиофайл обнаружен
-         ↓
-   Создается filename.in_progress
-         ↓
-   Статус: {"status": "processing", "current_attempt": 1}
+[audio.mp3] → [audio.in_progress] → [audio.result]
+                      ↓
+              (при ошибке остается .in_progress с status: "error")
 ```
 
-### 2. Обновление прогресса
-```
-Загрузка модели
-         ↓
-   Обновление: {"stage": "loading_model", "percentage": 25}
-         ↓
-Обработка аудио
-         ↓
-   Обновление: {"stage": "processing_audio", "percentage": 75}
-```
+### Очистка файлов
+При DELETE запросе удаляются все связанные файлы:
+- Исходный аудиофайл
+- .in_progress файл
+- .result файл
+- Любые временные файлы
 
-### 3. Завершение обработки
-```
-Обработка завершена успешно
-         ↓
-   Создается filename.result
-         ↓
-   Удаляется filename.in_progress
-```
+## 🛠️ Утилиты для работы с файлами
 
-### 4. Обработка ошибок
-```
-Произошла ошибка
-         ↓
-   Обновление .in_progress с error
-         ↓
-   Retry попытка или перемещение в manual/
-```
-
-## 🛠️ Операции с файлами
-
-### 📖 Чтение статуса
+### Проверка статуса файла
 ```python
-import json
+async def get_file_status(filename: str) -> TaskStatus:
+    """
+    Определяет статус файла по наличию файлов:
+    1. Проверка .result (COMPLETED)
+    2. Проверка .in_progress (PROCESSING/ERROR)
+    3. Проверка исходного файла (FILE_NOT_FOUND)
+    4. Проверка очереди задач (PENDING)
+    """
+    base_name = Path(filename).stem
+    
+    # Проверка результата
+    if (shared_dir / f"{base_name}.result").exists():
+        return TaskStatus.COMPLETED
+    
+    # Проверка обработки
+    in_progress_file = shared_dir / f"{base_name}.in_progress"
+    if in_progress_file.exists():
+        try:
+            with open(in_progress_file) as f:
+                data = json.load(f)
+                return TaskStatus.ERROR if data.get("status") == "error" else TaskStatus.PROCESSING
+        except:
+            return TaskStatus.PROCESSING
+    
+    # Проверка исходного файла
+    if not (shared_dir / filename).exists():
+        return TaskStatus.FILE_NOT_FOUND
+    
+    # Проверка очереди
+    if await task_manager.has_task(filename):
+        return TaskStatus.PENDING
+    
+    return None
+```
 
-def read_status(filename):
+### Чтение статусных файлов
+```python
+async def read_in_progress_file(filename: str) -> Optional[dict]:
+    """Чтение .in_progress файла"""
+    base_name = Path(filename).stem
+    file_path = shared_dir / f"{base_name}.in_progress"
+    
+    if not file_path.exists():
+        return None
+    
     try:
-        with open(f"{filename}.in_progress", "r") as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except FileNotFoundError:
+    except Exception as e:
+        logger.error(f"Error reading .in_progress file: {e}")
+        return None
+
+async def read_result_file(filename: str) -> Optional[dict]:
+    """Чтение .result файла"""
+    base_name = Path(filename).stem
+    file_path = shared_dir / f"{base_name}.result"
+    
+    if not file_path.exists():
+        return None
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error reading .result file: {e}")
         return None
 ```
 
-### ✏️ Обновление прогресса
+### Обновление статусных файлов
 ```python
-def update_progress(filename, stage, percentage):
-    status = read_status(filename)
-    if status:
-        current_attempt = status["attempts"][-1]
-        current_attempt["progress_info"] = {
-            "stage": stage,
-            "percentage": percentage
-        }
-        write_status(filename, status)
-```
-
-### 💾 Сохранение результата
-```python
-def save_result(filename, transcription_data, metadata):
-    result = {
-        "filename": filename,
-        "processing_end": datetime.now().isoformat(),
-        "transcription": transcription_data,
-        "metadata": metadata
-    }
+async def update_in_progress_file(filename: str, data: dict):
+    """Обновление .in_progress файла"""
+    base_name = Path(filename).stem
+    file_path = shared_dir / f"{base_name}.in_progress"
     
-    with open(f"{filename}.result", "w") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error updating .in_progress file: {e}")
+        raise
+
+async def create_result_file(filename: str, result_data: dict):
+    """Создание .result файла"""
+    base_name = Path(filename).stem
+    file_path = shared_dir / f"{base_name}.result"
     
-    # Удаляем .in_progress после успешного сохранения
-    os.remove(f"{filename}.in_progress")
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(result_data, f, indent=2, ensure_ascii=False)
+        
+        # Удаление .in_progress файла после успешного создания .result
+        in_progress_path = shared_dir / f"{base_name}.in_progress"
+        if in_progress_path.exists():
+            in_progress_path.unlink()
+            
+    except Exception as e:
+        logger.error(f"Error creating .result file: {e}")
+        raise
 ```
 
-## 📋 Примеры использования
+## 🔍 Мониторинг и отладка
 
-### 🔍 Проверка статуса файла
+### Поиск проблемных файлов
+```bash
+# Поиск зависших .in_progress файлов (старше 1 часа)
+find ./shared -name "*.in_progress" -mtime +1h
+
+# Поиск файлов с ошибками
+grep -l '"status": "error"' ./shared/*.in_progress
+
+# Статистика по статусам
+echo "Processing files:"; ls ./shared/*.in_progress | wc -l
+echo "Completed files:"; ls ./shared/*.result | wc -l
+```
+
+### Проверка валидности JSON
 ```python
-def get_file_status(filename):
-    if os.path.exists(f"{filename}.result"):
-        return "completed"
-    elif os.path.exists(f"{filename}.in_progress"):
-        return "processing"
-    elif os.path.exists(filename):
-        return "pending"
-    else:
-        return "not_found"
-```
-
-### ⏰ Проверка времени обработки
-```python
-def check_processing_timeout(filename, timeout_minutes=60):
-    status = read_status(filename)
-    if status:
-        start_time = datetime.fromisoformat(status["creation_time"])
-        if (datetime.now() - start_time).seconds > timeout_minutes * 60:
-            return True  # Таймаут превышен
-    return False
-```
-
-### 🧹 Очистка старых файлов
-```python
-def cleanup_old_files(max_age_hours=24):
-    for file in glob.glob("*.in_progress"):
-        if file_age_hours(file) > max_age_hours:
-            # Переместить в папку для ручной обработки
-            move_to_manual_processing(file)
-```
-# 📊 Статусные файлы
-
-## 🔄 Файл состояния обработки (.in_progress)
-
-### 📁 Назначение
-Файл `filename.in_progress` создается при начале обработки аудиофайла и содержит информацию о текущем состоянии обработки.
-
-### 📝 Упрощенная структура JSON
-```json
-{
-  "filename": "audio.mp3",
-  "status": "processing",
-  "start_time": "2024-01-01T10:00:00Z",
-  "attempt": 1,
-  "settings": {
-    "model_size": "base",
-    "language": "ru",
-    "temperature": 0.1,
-    "compute_type": "int8",
-    "device": "cpu"
-  },
-  "error": null
-}
-```
-
-### 🔧 Описание полей
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `filename` | string | Имя обрабатываемого файла |
-| `status` | string | Статус: "processing", "completed", "error" |
-| `start_time` | ISO8601 | Время начала обработки |
-| `attempt` | integer | Номер текущей попытки (1-3) |
-| `settings` | object | Настройки обработки |
-| `error` | object/null | Информация об ошибке (если есть) |
-
-## ✅ Файл результата (.result)
-
-### 📁 Назначение
-Файл `filename.result` создается после успешной обработки и содержит результаты транскрипции.
-
-### 📝 Упрощенная структура JSON
-```json
-{
-  "filename": "audio.mp3",
-  "processing_time_seconds": 27.1,
-  "transcription": {
-    "text": "Полный текст транскрипции аудиозаписи...",
-    "segments": [
-      {
-        "start": 0.0,
-        "end": 5.2,
-        "text": "Привет, как дела?"
-      }
-    ]
-  },
-  "metadata": {
-    "duration_seconds": 135.5,
-    "confidence": 0.89,
-    "word_count": 156
-  }
-}
-```
-
-### 🔧 Описание полей результата
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `filename` | string | Имя обработанного файла |
-| `processing_time_seconds` | float | Время обработки в секундах |
-| `transcription.text` | string | Полный текст транскрипции |
-| `transcription.segments` | array | Сегменты с временными метками |
-| `metadata.duration_seconds` | float | Длительность аудио |
-| `metadata.confidence` | float | Уверенность модели (0.0-1.0) |
-| `metadata.word_count` | integer | Количество слов |
-
-## 🔄 Жизненный цикл файлов
-
-### Процесс обработки
-```
-1. Аудиофайл обнаружен → создается filename.in_progress
-2. Обработка WhisperX → обновляется статус в .in_progress
-3. Обработка завершена → создается filename.result
-4. Успех → удаляется filename.in_progress
-5. Ошибка → обновляется error в .in_progress
-```
-
-### Определение статуса файла
-- **pending**: есть только `audio.mp3`
-- **processing**: есть `audio.mp3` + `audio.in_progress`
-- **completed**: есть `audio.mp3` + `audio.result`
-- **error**: есть `audio.mp3` + `audio.in_progress` с полем error
-
-## 🛠️ Примеры использования
-
-### Чтение статуса
-```python
-import json
-import os
-
-def get_file_status(filename):
-    if os.path.exists(f"shared/{filename}.result"):
-        return "completed"
-    elif os.path.exists(f"shared/{filename}.in_progress"):
-        return "processing"
-    elif os.path.exists(f"shared/{filename}"):
-        return "pending"
-    else:
-        return "not_found"
-```
-
-### Создание .in_progress
-```python
-def create_in_progress(filename, settings):
-    data = {
-        "filename": filename,
-        "status": "processing", 
-        "start_time": datetime.now().isoformat(),
-        "attempt": 1,
-        "settings": settings,
-        "error": None
-    }
-    with open(f"shared/{filename}.in_progress", "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-```
-
-### Сохранение результата
-```python
-def save_result(filename, transcription_data, metadata):
-    result = {
-        "filename": filename,
-        "processing_time_seconds": 27.1,
-        "transcription": transcription_data,
-        "metadata": metadata
-    }
+def validate_status_files(shared_dir: Path):
+    """Проверка всех статусных файлов на корректность JSON"""
+    for file_path in shared_dir.glob("*.in_progress"):
+        try:
+            with open(file_path) as f:
+                json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON in {file_path}: {e}")
     
-    with open(f"shared/{filename}.result", "w") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
-    
-    # Удаляем .in_progress после успешного сохранения
-    os.remove(f"shared/{filename}.in_progress")
+    for file_path in shared_dir.glob("*.result"):
+        try:
+            with open(file_path) as f:
+                json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON in {file_path}: {e}")
 ```
+
+---
+
+**Дата обновления:** 3 ноября 2025  
+**Версия:** 1.0

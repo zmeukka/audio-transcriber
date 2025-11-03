@@ -1,69 +1,30 @@
-# 📁 Shared Directory
+# Shared Directory
 
-## 🎯 Назначение
-Единая директория для всех пользовательских файлов - аудиофайлов, статусов обработки и результатов транскрипции.
+This directory is used for file exchange between the Audio Transcriber Docker container and the host system.
 
-## 📊 Архитектура файлов
-```
-shared/
-├── audio.mp3           # Исходные аудиофайлы
-├── audio.in_progress   # Статус обработки (JSON)
-└── audio.result        # Результаты транскрипции (JSON)
-```
+## How it works
 
-## 🔄 Жизненный цикл файлов
+1. Place audio files in this directory
+2. They will be automatically detected by the file monitor
+3. Use API endpoints to process them
+4. Results will appear as `.result` files
+5. Processing status is tracked in `.in_progress` files
 
-### 1. Загрузка аудио
-Пользователь помещает аудиофайл в shared директорию:
-```
-shared/meeting_recording.mp3
-```
+## Supported Audio Formats
 
-### 2. Начало обработки
-Система создает статусный файл:
-```
-shared/meeting_recording.mp3           # Исходный файл
-shared/meeting_recording.in_progress   # Статус обработки
-```
+- **Audio:** MP3, WAV, FLAC, M4A, OGG, AAC, WMA, OPUS
+- **Video:** MP4, AVI, MOV, MKV, WEBM (audio track will be extracted)
 
-### 3. Завершение обработки
-При успешной обработке создается результат:
-```
-shared/meeting_recording.mp3      # Исходный файл
-shared/meeting_recording.result   # Результат транскрипции
-```
-`.in_progress` файл удаляется при успехе.
+## Test File Generation
 
-## 📋 Поддерживаемые форматы
-- `.mp3` - MP3 аудиофайлы
-- `.wav` - WAV аудиофайлы  
-- `.m4a` - M4A аудиофайлы
-- `.ogg` - OGG аудиофайлы
-- `.flac` - FLAC аудиофайлы
+Use `create_sample_mp3.py` to generate test audio files for development and testing.
 
-## 🔗 Docker монтирование
-```yaml
-volumes:
-  - ./shared:/app/shared  # Монтирование shared директории
-```
+## File Status
 
-## 📡 API использование
-```bash
-# Обработка файла через API
-curl -X POST http://localhost:8000/transcribe \
-  -d '{"filename": "meeting_recording.mp3"}'
+- `filename.ext` - Original audio file
+- `filename.in_progress` - Processing status (JSON)
+- `filename.result` - Transcription result (JSON)
 
-# Проверка статуса
-curl http://localhost:8000/status/meeting_recording.mp3
+## Sample Files
 
-# Получение результата
-curl http://localhost:8000/result/meeting_recording.mp3
-```
-
-## 🔧 Автоматическое сканирование
-Система автоматически сканирует директорию на наличие новых аудиофайлов и добавляет их в очередь обработки с низким приоритетом.
-
-## 📚 Детальная информация
-- **[Руководство пользователя](../docs/user_guide.md)** - Как использовать shared директорию
-- **[Статусные файлы](../docs/status_files.md)** - Формат .in_progress/.result
-- **[API спецификация](../docs/api.md)** - REST API endpoints
+Files containing "sample" in the name are excluded from automatic scanning but can be processed via API requests.

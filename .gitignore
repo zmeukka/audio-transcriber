@@ -1,8 +1,6 @@
 # Virtual environments
 .venv/
-venv/
 env/
-output/
 
 # Python cache
 __pycache__/
@@ -21,16 +19,19 @@ Thumbs.db
 # WhisperX models (large files)
 models/*
 !models/README.*
+!models/init_models.py
+!models/init.sh
+!models/init.ps1
+!models/models_info.txt
 
-# Input files (temporary and output)
-input/!*.txt
+# Shared directory - exclude all files except documentation and test generator
+shared/*
+!shared/README.md
+!shared/create_sample_mp3.py
 
-# Processing files (temporary and output)
-output/*.txt
-output/*.in_process
-manual/*
+# Logs
+*.log
+logs/
 
-# Test and sample files (optional - uncomment if needed)
-# input/sample.*
-# output/sample.*
-cache/
+# Docker
+.env
